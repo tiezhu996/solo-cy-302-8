@@ -114,7 +114,8 @@ func (fakeQuestionRepo) FindQuestionsByIDs(_ context.Context, _ []uint) (map[uin
 
 // fakeUserRepo is an in-memory UserRepo for operator name snapshots.
 type fakeUserRepo struct {
-	users map[uint]model.User
+	users   map[uint]model.User
+	findErr error
 }
 
 func (fakeUserRepo) CreateUser(_ context.Context, _ *model.User) error { return nil }
@@ -122,6 +123,9 @@ func (fakeUserRepo) FindUserByUsername(_ context.Context, _ string) (*model.User
 	return nil, repository.ErrNotFound
 }
 func (f fakeUserRepo) FindUserByID(_ context.Context, id uint) (*model.User, error) {
+	if f.findErr != nil {
+		return nil, f.findErr
+	}
 	u, ok := f.users[id]
 	if !ok {
 		return nil, repository.ErrNotFound
@@ -139,7 +143,11 @@ var extendTestUsers = map[uint]model.User{
 }
 
 func newExamService(repo ExamRepo) *ExamService {
-	return NewExamService(repo, fakeQuestionRepo{}, fakeUserRepo{users: extendTestUsers}, slog.Default())
+	return newExamServiceWithUsers(repo, extendTestUsers)
+}
+
+func newExamServiceWithUsers(repo ExamRepo, users map[uint]model.User) *ExamService {
+	return NewExamService(repo, fakeQuestionRepo{}, fakeUserRepo{users: users}, slog.Default())
 }
 
 func TestExamServiceExtend(t *testing.T) {
@@ -381,6 +389,81 @@ func TestExamServiceListExtensions(t *testing.T) {
 			t.Fatalf("ListExtensions() error = %v, want %v", err, ErrNotFound)
 		}
 	})
+}
+
+// TestExamServiceExtendOperatorGate verifies the operator is verified before
+// any record is created: a failed lookup fails the whole extension, the login
+// username is the stable fallback for an empty display name, and an empty
+// operator name is never saved.
+func TestExamServiceExtendOperatorGate(t *testing.T) {
+	now := time.Now()
+	oldEnd := now.Add(2 * time.Hour)
+	newEnd := now.Add(3 * time.Hour)
+	published := func() *model.Exam {
+		end := oldEnd
+		return &model.Exam{ID: 7, Title: "期中考试", Status: constants.ExamPublished, CreatedBy: 42, EndTime: &end}
+	}
+
+	t.Run("operator not found fails extend and saves no record", func(t *testing.T) {
+		examRepo := &fakeExamRepo{exam: published(), affected: 3}
+		svc := newExamServiceWithUsers(examRepo, map[uint]model.User{})
+		_, err := svc.Extend(context.Background(), constants.RoleAdmin, 1, 7, dto.ExamExtendRequest{EndTime: newEnd})
+		if !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("Extend() error = %v, want %v", err, ErrUnauthorized)
+		}
+		assertNoExtendSideEffects(t, examRepo, oldEnd)
+	})
+
+	t.Run("operator lookup error fails extend and saves no record", func(t *testing.T) {
+		examRepo := &fakeExamRepo{exam: published(), affected: 3}
+		lookupErr := errors.New("users table unavailable")
+		svc := NewExamService(examRepo, fakeQuestionRepo{}, fakeUserRepo{users: extendTestUsers, findErr: lookupErr}, slog.Default())
+		_, err := svc.Extend(context.Background(), constants.RoleAdmin, 1, 7, dto.ExamExtendRequest{EndTime: newEnd})
+		if !errors.Is(err, lookupErr) {
+			t.Fatalf("Extend() error = %v, want wrapped %v", err, lookupErr)
+		}
+		assertNoExtendSideEffects(t, examRepo, oldEnd)
+	})
+
+	t.Run("empty operator name never saved", func(t *testing.T) {
+		examRepo := &fakeExamRepo{exam: published(), affected: 3}
+		svc := newExamServiceWithUsers(examRepo, map[uint]model.User{1: {ID: 1, Name: "", Username: ""}})
+		_, err := svc.Extend(context.Background(), constants.RoleAdmin, 1, 7, dto.ExamExtendRequest{EndTime: newEnd})
+		if err == nil {
+			t.Fatal("Extend() expected error for empty operator name, got nil")
+		}
+		assertNoExtendSideEffects(t, examRepo, oldEnd)
+	})
+
+	t.Run("username is stable fallback when name empty", func(t *testing.T) {
+		examRepo := &fakeExamRepo{exam: published(), affected: 3}
+		svc := newExamServiceWithUsers(examRepo, map[uint]model.User{1: {ID: 1, Username: "admin"}})
+		_, err := svc.Extend(context.Background(), constants.RoleAdmin, 1, 7, dto.ExamExtendRequest{EndTime: newEnd})
+		if err != nil {
+			t.Fatalf("Extend() unexpected error = %v", err)
+		}
+		if len(examRepo.records) != 1 {
+			t.Fatalf("records = %d, want 1", len(examRepo.records))
+		}
+		if got := examRepo.records[0].OperatorName; got != "admin" {
+			t.Fatalf("OperatorName = %q, want fallback username %q", got, "admin")
+		}
+	})
+}
+
+// assertNoExtendSideEffects checks that a rejected/failed extend left the exam
+// end time untouched and produced no extension record.
+func assertNoExtendSideEffects(t *testing.T, examRepo *fakeExamRepo, oldEnd time.Time) {
+	t.Helper()
+	if examRepo.extendCalls != 0 {
+		t.Fatalf("ExtendExamEndTime called %d times, want 0", examRepo.extendCalls)
+	}
+	if len(examRepo.records) != 0 {
+		t.Fatalf("records = %d, want 0 (no empty-name record may be saved)", len(examRepo.records))
+	}
+	if examRepo.exam.EndTime == nil || !examRepo.exam.EndTime.Equal(oldEnd) {
+		t.Fatalf("exam end time changed: %v, want original %v", examRepo.exam.EndTime, oldEnd)
+	}
 }
 
 func ptrTime(t time.Time) *time.Time {

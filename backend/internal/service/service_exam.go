@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -198,10 +199,14 @@ func (s *ExamService) Extend(ctx context.Context, role string, userID, id uint, 
 	oldEnd := *exam.EndTime
 	delta := req.EndTime.Sub(oldEnd)
 	newEnd := req.EndTime
+	operatorName, err := s.resolveOperatorName(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	record := &model.ExamExtension{
 		ExamID:        id,
 		OperatorID:    userID,
-		OperatorName:  s.operatorName(ctx, userID),
+		OperatorName:  operatorName,
 		OldEndTime:    oldEnd,
 		NewEndTime:    newEnd,
 		ExtendMinutes: round2(delta.Minutes()),
@@ -250,17 +255,26 @@ func (s *ExamService) ListExtensions(ctx context.Context, role string, userID, i
 	return result, nil
 }
 
-// operatorName snapshots the operator's display name for the audit record. A
-// failed lookup never blocks the extension: the record still keeps the ID.
-func (s *ExamService) operatorName(ctx context.Context, userID uint) string {
+// resolveOperatorName verifies the operator exists and returns a non-empty
+// display name for the audit record: the display name, falling back to the
+// stable login username. When the operator cannot be verified the whole
+// extension fails — a record is never saved with an empty operator name.
+func (s *ExamService) resolveOperatorName(ctx context.Context, userID uint) (string, error) {
 	user, err := s.userRepo.FindUserByID(ctx, userID)
 	if err != nil {
-		return ""
+		if errors.Is(err, ErrNotFound) {
+			return "", ErrUnauthorized
+		}
+		return "", fmt.Errorf("find operator: %w", err)
 	}
-	if user.Name != "" {
-		return user.Name
+	name := user.Name
+	if name == "" {
+		name = user.Username
 	}
-	return user.Username
+	if name == "" {
+		return "", fmt.Errorf("operator %d has neither name nor username", userID)
+	}
+	return name, nil
 }
 
 // Delete removes an exam (only creator/admin).

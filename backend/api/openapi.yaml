@@ -199,6 +199,9 @@ paths:
       description: >-
         教师只能顺延自己创建的考试，管理员可顺延全部考试。新结束时间必须晚于原结束时间和当前时间；
         已开始的试卷个人截止时间按相同分钟数顺延。已关闭的考试返回 422。
+        每次顺延在同一事务中追加一条调整记录；操作人必须存在且名称有效
+        （显示名为空时以登录名兜底），无法核验操作人时顺延整体失败并返回 401，
+        不会保存空名称的记录。
       security:
         - bearerAuth: []
       parameters:
@@ -245,6 +248,8 @@ paths:
                         type: number
                       affected_attempts:
                         type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '422':
