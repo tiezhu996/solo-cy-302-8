@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"gorm.io/gorm"
 
@@ -53,35 +52,6 @@ func (r *Repository) UpdateExam(ctx context.Context, exam *model.Exam) error {
 		return ErrNotFound
 	}
 	return nil
-}
-
-// ExtendExamEndTime atomically moves an exam's end time to newEnd and shifts
-// the personal deadline of every in-progress attempt by delta. Both writes
-// commit in one transaction: if either fails, the transaction rolls back and
-// both times keep their original values. Returns the affected attempt count.
-func (r *Repository) ExtendExamEndTime(ctx context.Context, examID uint, newEnd time.Time, delta time.Duration) (int64, error) {
-	var affected int64
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&model.Exam{}).Where("id = ?", examID).Update("end_time", newEnd)
-		if res.Error != nil {
-			return fmt.Errorf("update exam end time: %w", res.Error)
-		}
-		if res.RowsAffected == 0 {
-			return ErrNotFound
-		}
-		res = tx.Model(&model.ExamAttempt{}).
-			Where("exam_id = ? AND status = ?", examID, "in_progress").
-			Update("deadline", gorm.Expr("DATE_ADD(deadline, INTERVAL ? MICROSECOND)", delta.Microseconds()))
-		if res.Error != nil {
-			return fmt.Errorf("shift in-progress deadlines: %w", res.Error)
-		}
-		affected = res.RowsAffected
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return affected, nil
 }
 
 // DeleteExam removes an exam.

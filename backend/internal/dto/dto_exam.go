@@ -42,6 +42,19 @@ type ExamExtendResponse struct {
 	AffectedAttempts int       `json:"affected_attempts"`
 }
 
+// ExamExtensionResponse is one append-only exam extension audit record.
+type ExamExtensionResponse struct {
+	ID               uint      `json:"id"`
+	ExamID           uint      `json:"exam_id"`
+	OperatorID       uint      `json:"operator_id"`
+	OperatorName     string    `json:"operator_name"`
+	OldEndTime       time.Time `json:"old_end_time"`
+	NewEndTime       time.Time `json:"new_end_time"`
+	ExtendMinutes    float64   `json:"extend_minutes"`
+	AffectedAttempts int       `json:"affected_attempts"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
 // ExamResponse is the paper metadata.
 type ExamResponse struct {
 	ID              uint       `json:"id"`

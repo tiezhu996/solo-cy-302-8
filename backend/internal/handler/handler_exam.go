@@ -105,6 +105,21 @@ func (s *Server) ExtendExam(c *gin.Context) {
 	httpx.OK(c, result)
 }
 
+// ListExamExtensions handles GET /exams/:id/extensions.
+func (s *Server) ListExamExtensions(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		httpx.Fail(c, http.StatusUnprocessableEntity, constants.CodeValidation, "考试 ID 不合法")
+		return
+	}
+	records, err := s.exams.ListExtensions(c.Request.Context(), middleware.Role(c), middleware.UserID(c), uint(id))
+	if err != nil {
+		s.respondError(c, err)
+		return
+	}
+	httpx.OK(c, records)
+}
+
 // DeleteExam handles DELETE /exams/:id.
 func (s *Server) DeleteExam(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)

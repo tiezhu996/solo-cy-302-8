@@ -6,6 +6,7 @@ import type {
   Exam,
   ExamCreatePayload,
   ExamExtendResponse,
+  ExamExtensionRecord,
   ExamStatResponse,
   LoginResponse,
   OverviewResponse,
@@ -80,6 +81,9 @@ export const examApi = {
   },
   extend(id: number, endTime: string) {
     return http.post<never, ExamExtendResponse>(`/exams/${id}/extend`, { end_time: endTime })
+  },
+  extensions(id: number) {
+    return http.get<never, ExamExtensionRecord[]>(`/exams/${id}/extensions`)
   },
   remove(id: number) {
     return http.delete<never, { message: string }>(`/exams/${id}`)

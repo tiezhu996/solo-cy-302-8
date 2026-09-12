@@ -29,6 +29,7 @@
             <el-button v-if="row.status === 'draft'" type="success" size="small" @click="publish(row)">发布</el-button>
             <el-button v-if="row.status === 'published'" type="warning" size="small" @click="closeExam(row)">关闭</el-button>
             <el-button v-if="row.status === 'published'" type="primary" plain size="small" @click="openExtend(row)">顺延</el-button>
+            <el-button size="small" @click="viewExtensions(row)">顺延记录</el-button>
             <el-button size="small" @click="viewStats(row)">统计</el-button>
             <el-button size="small" type="info" @click="$router.push(`/grading/${row.id}`)">批改</el-button>
             <el-button size="small" type="danger" @click="removeExam(row)">删除</el-button>
@@ -135,6 +136,25 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="extensionsVisible" title="顺延记录" width="860px">
+      <el-table :data="extensions" v-loading="extensionsLoading" border max-height="480" empty-text="暂无顺延记录">
+        <el-table-column label="操作时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="operator_name" label="操作人" width="110">
+          <template #default="{ row }">{{ row.operator_name || `#${row.operator_id}` }}</template>
+        </el-table-column>
+        <el-table-column label="原结束时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.old_end_time) }}</template>
+        </el-table-column>
+        <el-table-column label="新结束时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.new_end_time) }}</template>
+        </el-table-column>
+        <el-table-column prop="extend_minutes" label="顺延(分钟)" width="100" align="right" />
+        <el-table-column prop="affected_attempts" label="受影响试卷" width="100" align="right" />
+      </el-table>
+    </el-dialog>
+
     <el-dialog v-model="questionsVisible" title="试卷题目" width="800px">
       <el-table :data="questions" border max-height="500">
         <el-table-column type="index" label="#" width="50" />
@@ -174,7 +194,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import { examApi } from '../api'
 import { useAuthStore } from '../stores/auth'
-import type { Exam, PaperQuestionConfig, ExamStatResponse } from '../types'
+import type { Exam, ExamExtensionRecord, PaperQuestionConfig, ExamStatResponse } from '../types'
 
 const typeLabels: Record<string, string> = {
   single: '单选题',
@@ -307,6 +327,20 @@ async function submitExtend() {
     load()
   } finally {
     extending.value = false
+  }
+}
+
+const extensionsVisible = ref(false)
+const extensionsLoading = ref(false)
+const extensions = ref<ExamExtensionRecord[]>([])
+
+async function viewExtensions(row: Exam) {
+  extensionsVisible.value = true
+  extensionsLoading.value = true
+  try {
+    extensions.value = await examApi.extensions(row.id)
+  } finally {
+    extensionsLoading.value = false
   }
 }
 

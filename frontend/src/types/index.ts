@@ -85,6 +85,18 @@ export interface ExamExtendResponse {
   affected_attempts: number
 }
 
+export interface ExamExtensionRecord {
+  id: number
+  exam_id: number
+  operator_id: number
+  operator_name: string
+  old_end_time: string
+  new_end_time: string
+  extend_minutes: number
+  affected_attempts: number
+  created_at: string
+}
+
 export interface ExamQuestionView {
   exam_question_id: number
   type: QuestionType

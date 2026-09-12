@@ -39,7 +39,8 @@ type ExamRepo interface {
 	ReplaceExamQuestions(ctx context.Context, examID uint, items []model.ExamQuestion) error
 	ListExamQuestions(ctx context.Context, examID uint) ([]model.ExamQuestion, error)
 	CountExamQuestions(ctx context.Context, examID uint) (int64, error)
-	ExtendExamEndTime(ctx context.Context, examID uint, newEnd time.Time, delta time.Duration) (int64, error)
+	ExtendExamEndTime(ctx context.Context, examID uint, newEnd time.Time, delta time.Duration, record *model.ExamExtension) (int64, error)
+	ListExamExtensions(ctx context.Context, examID uint) ([]model.ExamExtension, error)
 }
 
 // AttemptRepo is the attempt persistence contract.

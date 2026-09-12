@@ -18,11 +18,12 @@ type ExamService struct {
 	baseService
 	repo         ExamRepo
 	questionRepo QuestionRepo
+	userRepo     UserRepo
 }
 
 // NewExamService constructs ExamService.
-func NewExamService(repo ExamRepo, questionRepo QuestionRepo, logger *slog.Logger) *ExamService {
-	return &ExamService{baseService: NewBaseService(logger), repo: repo, questionRepo: questionRepo}
+func NewExamService(repo ExamRepo, questionRepo QuestionRepo, userRepo UserRepo, logger *slog.Logger) *ExamService {
+	return &ExamService{baseService: NewBaseService(logger), repo: repo, questionRepo: questionRepo, userRepo: userRepo}
 }
 
 // Create builds an exam and auto-generates its paper.
@@ -197,7 +198,15 @@ func (s *ExamService) Extend(ctx context.Context, role string, userID, id uint, 
 	oldEnd := *exam.EndTime
 	delta := req.EndTime.Sub(oldEnd)
 	newEnd := req.EndTime
-	affected, err := s.repo.ExtendExamEndTime(ctx, id, newEnd, delta)
+	record := &model.ExamExtension{
+		ExamID:        id,
+		OperatorID:    userID,
+		OperatorName:  s.operatorName(ctx, userID),
+		OldEndTime:    oldEnd,
+		NewEndTime:    newEnd,
+		ExtendMinutes: round2(delta.Minutes()),
+	}
+	affected, err := s.repo.ExtendExamEndTime(ctx, id, newEnd, delta, record)
 	if err != nil {
 		return nil, fmt.Errorf("extend exam: %w", err)
 	}
@@ -208,6 +217,50 @@ func (s *ExamService) Extend(ctx context.Context, role string, userID, id uint, 
 		ExtendMinutes:    round2(delta.Minutes()),
 		AffectedAttempts: int(affected),
 	}, nil
+}
+
+// ListExtensions returns the append-only extension records of an exam, newest
+// first. Teachers see only their own exams; admins see all.
+func (s *ExamService) ListExtensions(ctx context.Context, role string, userID, id uint) ([]dto.ExamExtensionResponse, error) {
+	exam, err := s.repo.FindExamByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if role == constants.RoleTeacher && exam.CreatedBy != userID {
+		return nil, ErrForbidden
+	}
+	records, err := s.repo.ListExamExtensions(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("list exam extensions: %w", err)
+	}
+	result := make([]dto.ExamExtensionResponse, 0, len(records))
+	for _, r := range records {
+		result = append(result, dto.ExamExtensionResponse{
+			ID:               r.ID,
+			ExamID:           r.ExamID,
+			OperatorID:       r.OperatorID,
+			OperatorName:     r.OperatorName,
+			OldEndTime:       r.OldEndTime,
+			NewEndTime:       r.NewEndTime,
+			ExtendMinutes:    r.ExtendMinutes,
+			AffectedAttempts: r.AffectedAttempts,
+			CreatedAt:        r.CreatedAt,
+		})
+	}
+	return result, nil
+}
+
+// operatorName snapshots the operator's display name for the audit record. A
+// failed lookup never blocks the extension: the record still keeps the ID.
+func (s *ExamService) operatorName(ctx context.Context, userID uint) string {
+	user, err := s.userRepo.FindUserByID(ctx, userID)
+	if err != nil {
+		return ""
+	}
+	if user.Name != "" {
+		return user.Name
+	}
+	return user.Username
 }
 
 // Delete removes an exam (only creator/admin).

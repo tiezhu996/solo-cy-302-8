@@ -249,3 +249,57 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           description: 回拨时间、考试未发布/已关闭、未设置结束时间等校验失败
+  /api/v1/exams/{id}/extensions:
+    get:
+      summary: 查询考试顺延调整记录（按时间倒序）
+      description: >-
+        每次顺延都会追加一条只增不改删的记录，包含操作人、原结束时间、新结束时间、
+        顺延分钟数和受影响试卷数。教师只能查看自己创建的考试，管理员可查看全部，学生不可访问。
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 顺延记录列表（无记录时返回空数组）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        exam_id:
+                          type: integer
+                        operator_id:
+                          type: integer
+                        operator_name:
+                          type: string
+                        old_end_time:
+                          type: string
+                          format: date-time
+                        new_end_time:
+                          type: string
+                          format: date-time
+                        extend_minutes:
+                          type: number
+                        affected_attempts:
+                          type: integer
+                        created_at:
+                          type: string
+                          format: date-time
+        '403':
+          $ref: '#/components/responses/Forbidden'
