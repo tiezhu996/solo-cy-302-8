@@ -85,6 +85,26 @@ func (s *Server) CloseExam(c *gin.Context) {
 	httpx.OK(c, gin.H{"message": "已关闭"})
 }
 
+// ExtendExam handles POST /exams/:id/extend.
+func (s *Server) ExtendExam(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		httpx.Fail(c, http.StatusUnprocessableEntity, constants.CodeValidation, "考试 ID 不合法")
+		return
+	}
+	var req dto.ExamExtendRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, http.StatusUnprocessableEntity, constants.CodeValidation, "请求参数不合法")
+		return
+	}
+	result, err := s.exams.Extend(c.Request.Context(), middleware.Role(c), middleware.UserID(c), uint(id), req)
+	if err != nil {
+		s.respondError(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
 // DeleteExam handles DELETE /exams/:id.
 func (s *Server) DeleteExam(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)

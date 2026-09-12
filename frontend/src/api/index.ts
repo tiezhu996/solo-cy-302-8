@@ -5,6 +5,7 @@ import type {
   AttemptSummary,
   Exam,
   ExamCreatePayload,
+  ExamExtendResponse,
   ExamStatResponse,
   LoginResponse,
   OverviewResponse,
@@ -76,6 +77,9 @@ export const examApi = {
   },
   close(id: number) {
     return http.post<never, { message: string }>(`/exams/${id}/close`)
+  },
+  extend(id: number, endTime: string) {
+    return http.post<never, ExamExtendResponse>(`/exams/${id}/extend`, { end_time: endTime })
   },
   remove(id: number) {
     return http.delete<never, { message: string }>(`/exams/${id}`)

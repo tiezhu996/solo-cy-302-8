@@ -11,6 +11,9 @@
       <el-table-column prop="duration_minutes" label="时长(分钟)" width="100" />
       <el-table-column prop="total_score" label="总分" width="80" />
       <el-table-column prop="question_count" label="题数" width="80" />
+      <el-table-column label="结束时间" min-width="150">
+        <template #default="{ row }">{{ formatTime(row.end_time) }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="statusTag[row.status as keyof typeof statusTag]">{{ statusLabels[row.status as keyof typeof statusLabels] }}</el-tag>
@@ -25,6 +28,7 @@
             <el-button size="small" @click="viewQuestions(row)">题目</el-button>
             <el-button v-if="row.status === 'draft'" type="success" size="small" @click="publish(row)">发布</el-button>
             <el-button v-if="row.status === 'published'" type="warning" size="small" @click="closeExam(row)">关闭</el-button>
+            <el-button v-if="row.status === 'published'" type="primary" plain size="small" @click="openExtend(row)">顺延</el-button>
             <el-button size="small" @click="viewStats(row)">统计</el-button>
             <el-button size="small" type="info" @click="$router.push(`/grading/${row.id}`)">批改</el-button>
             <el-button size="small" type="danger" @click="removeExam(row)">删除</el-button>
@@ -54,6 +58,26 @@
           <el-input-number v-model="form.duration_minutes" :min="1" />
           <span style="margin-left: 8px">分钟</span>
         </el-form-item>
+        <el-form-item label="开始时间">
+          <el-date-picker
+            v-model="form.start_time"
+            type="datetime"
+            placeholder="可选，留空表示不限"
+            value-format="YYYY-MM-DDTHH:mm:ssZ"
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="结束时间">
+          <el-date-picker
+            v-model="form.end_time"
+            type="datetime"
+            placeholder="可选，留空表示不限"
+            value-format="YYYY-MM-DDTHH:mm:ssZ"
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-form-item label="总分">
           <el-input-number v-model="form.total_score" :min="0" :step="1" />
           <span style="margin-left: 8px">（0 表示自动计算）</span>
@@ -78,6 +102,36 @@
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="onSave">创建</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="extendVisible" title="顺延考试结束时间" width="480px">
+      <el-form label-width="100px">
+        <el-form-item label="考试">
+          <span>{{ extendTarget?.title }}</span>
+        </el-form-item>
+        <el-form-item label="原结束时间">
+          <span>{{ formatTime(extendTarget?.end_time) }}</span>
+        </el-form-item>
+        <el-form-item label="新结束时间">
+          <el-date-picker
+            v-model="extendEndTime"
+            type="datetime"
+            placeholder="选择新的结束时间"
+            value-format="YYYY-MM-DDTHH:mm:ssZ"
+            :disabled-date="disabledPastDate"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <el-alert
+        type="info"
+        :closable="false"
+        title="顺延后将按相同分钟数同步延长进行中试卷的个人截止时间"
+      />
+      <template #footer>
+        <el-button @click="extendVisible = false">取消</el-button>
+        <el-button type="primary" :loading="extending" @click="submitExtend">确定顺延</el-button>
       </template>
     </el-dialog>
 
@@ -117,6 +171,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import dayjs from 'dayjs'
 import { examApi } from '../api'
 import { useAuthStore } from '../stores/auth'
 import type { Exam, PaperQuestionConfig, ExamStatResponse } from '../types'
@@ -152,8 +207,14 @@ const form = reactive({
   description: '',
   duration_minutes: 60,
   total_score: 100,
+  start_time: null as string | null,
+  end_time: null as string | null,
   question_config: [] as PaperQuestionConfig[]
 })
+
+function formatTime(v?: string | null) {
+  return v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'
+}
 
 function addConfig() {
   form.question_config.push({ type: 'single', count: 5, score: 2, difficulty: 'easy' })
@@ -164,6 +225,8 @@ function openCreate() {
   form.description = ''
   form.duration_minutes = 60
   form.total_score = 100
+  form.start_time = null
+  form.end_time = null
   form.question_config = [
     { type: 'single', count: 5, score: 2, difficulty: 'easy' },
     { type: 'true_false', count: 5, score: 1, difficulty: 'easy' }
@@ -179,6 +242,8 @@ async function onSave() {
       description: form.description,
       duration_minutes: form.duration_minutes,
       total_score: form.total_score,
+      start_time: form.start_time || null,
+      end_time: form.end_time || null,
       question_config: form.question_config
     })
     ElMessage.success('创建成功')
@@ -199,6 +264,50 @@ async function closeExam(row: Exam) {
   await examApi.close(row.id)
   ElMessage.success('已关闭')
   load()
+}
+
+const extendVisible = ref(false)
+const extending = ref(false)
+const extendTarget = ref<Exam | null>(null)
+const extendEndTime = ref('')
+
+function openExtend(row: Exam) {
+  extendTarget.value = row
+  extendEndTime.value = ''
+  extendVisible.value = true
+}
+
+function disabledPastDate(d: Date) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return d.getTime() < today.getTime()
+}
+
+async function submitExtend() {
+  const target = extendTarget.value
+  if (!target) return
+  if (!extendEndTime.value) {
+    ElMessage.warning('请选择新的结束时间')
+    return
+  }
+  const newEnd = new Date(extendEndTime.value).getTime()
+  if (target.end_time && newEnd <= new Date(target.end_time).getTime()) {
+    ElMessage.warning('新结束时间必须晚于原结束时间')
+    return
+  }
+  if (newEnd <= Date.now()) {
+    ElMessage.warning('新结束时间必须晚于当前时间')
+    return
+  }
+  extending.value = true
+  try {
+    const res = await examApi.extend(target.id, extendEndTime.value)
+    ElMessage.success(`已顺延 ${res.extend_minutes} 分钟，同步顺延 ${res.affected_attempts} 份进行中的试卷`)
+    extendVisible.value = false
+    load()
+  } finally {
+    extending.value = false
+  }
 }
 
 async function removeExam(row: Exam) {

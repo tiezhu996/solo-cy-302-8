@@ -28,6 +28,20 @@ type ExamListQuery struct {
 	Keyword string `form:"keyword"`
 }
 
+// ExamExtendRequest postpones a published exam's end time.
+type ExamExtendRequest struct {
+	EndTime time.Time `json:"end_time" binding:"required"`
+}
+
+// ExamExtendResponse describes the applied postponement.
+type ExamExtendResponse struct {
+	ID               uint      `json:"id"`
+	OldEndTime       time.Time `json:"old_end_time"`
+	NewEndTime       time.Time `json:"new_end_time"`
+	ExtendMinutes    float64   `json:"extend_minutes"`
+	AffectedAttempts int       `json:"affected_attempts"`
+}
+
 // ExamResponse is the paper metadata.
 type ExamResponse struct {
 	ID              uint       `json:"id"`

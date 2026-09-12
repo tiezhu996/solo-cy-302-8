@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/gbexam/online-exam/internal/model"
 	"github.com/gbexam/online-exam/internal/repository"
@@ -48,6 +49,7 @@ type AttemptRepo interface {
 	FindInProgressAttempt(ctx context.Context, examID, studentID uint) (*model.ExamAttempt, error)
 	ListAttemptsByStudent(ctx context.Context, studentID, examID uint, page, pageSize int) ([]model.ExamAttempt, int64, error)
 	ListAttemptsByExam(ctx context.Context, examID uint) ([]model.ExamAttempt, error)
+	ShiftInProgressDeadlines(ctx context.Context, examID uint, delta time.Duration) (int64, error)
 }
 
 // AnswerRepo is the answer persistence contract.

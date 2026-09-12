@@ -18,11 +18,12 @@ type ExamService struct {
 	baseService
 	repo         ExamRepo
 	questionRepo QuestionRepo
+	attemptRepo  AttemptRepo
 }
 
 // NewExamService constructs ExamService.
-func NewExamService(repo ExamRepo, questionRepo QuestionRepo, logger *slog.Logger) *ExamService {
-	return &ExamService{baseService: NewBaseService(logger), repo: repo, questionRepo: questionRepo}
+func NewExamService(repo ExamRepo, questionRepo QuestionRepo, attemptRepo AttemptRepo, logger *slog.Logger) *ExamService {
+	return &ExamService{baseService: NewBaseService(logger), repo: repo, questionRepo: questionRepo, attemptRepo: attemptRepo}
 }
 
 // Create builds an exam and auto-generates its paper.
@@ -163,6 +164,53 @@ func (s *ExamService) Close(ctx context.Context, role string, userID, id uint) e
 		return fmt.Errorf("close exam: %w", err)
 	}
 	return nil
+}
+
+// Extend postpones the end time of a published exam and shifts the personal
+// deadline of every in-progress attempt by the same amount of time.
+func (s *ExamService) Extend(ctx context.Context, role string, userID, id uint, req dto.ExamExtendRequest) (*dto.ExamExtendResponse, error) {
+	exam, err := s.repo.FindExamByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if role == constants.RoleTeacher && exam.CreatedBy != userID {
+		return nil, ErrForbidden
+	}
+	if exam.Status == constants.ExamClosed {
+		return nil, fmt.Errorf("%w: 考试已关闭，无法顺延", ErrValidation)
+	}
+	if exam.Status != constants.ExamPublished {
+		return nil, fmt.Errorf("%w: 仅已发布的考试可以顺延", ErrValidation)
+	}
+	if exam.EndTime == nil {
+		return nil, fmt.Errorf("%w: 考试未设置结束时间，无法顺延", ErrValidation)
+	}
+	now := time.Now()
+	if !req.EndTime.After(*exam.EndTime) {
+		return nil, fmt.Errorf("%w: 新结束时间必须晚于原结束时间", ErrValidation)
+	}
+	if !req.EndTime.After(now) {
+		return nil, fmt.Errorf("%w: 新结束时间必须晚于当前时间", ErrValidation)
+	}
+
+	oldEnd := *exam.EndTime
+	delta := req.EndTime.Sub(oldEnd)
+	newEnd := req.EndTime
+	exam.EndTime = &newEnd
+	if err := s.repo.UpdateExam(ctx, exam); err != nil {
+		return nil, fmt.Errorf("extend exam: %w", err)
+	}
+	affected, err := s.attemptRepo.ShiftInProgressDeadlines(ctx, id, delta)
+	if err != nil {
+		return nil, fmt.Errorf("shift in-progress deadlines: %w", err)
+	}
+	return &dto.ExamExtendResponse{
+		ID:               exam.ID,
+		OldEndTime:       oldEnd,
+		NewEndTime:       newEnd,
+		ExtendMinutes:    round2(delta.Minutes()),
+		AffectedAttempts: int(affected),
+	}, nil
 }
 
 // Delete removes an exam (only creator/admin).

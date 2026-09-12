@@ -193,3 +193,59 @@ paths:
       responses:
         '201':
           description: 创建成功
+  /api/v1/exams/{id}/extend:
+    post:
+      summary: 顺延已发布考试的结束时间
+      description: >-
+        教师只能顺延自己创建的考试，管理员可顺延全部考试。新结束时间必须晚于原结束时间和当前时间；
+        已开始的试卷个人截止时间按相同分钟数顺延。已关闭的考试返回 422。
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [end_time]
+              properties:
+                end_time:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: 顺延成功，返回新旧结束时间与受影响的进行中试卷数
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      old_end_time:
+                        type: string
+                        format: date-time
+                      new_end_time:
+                        type: string
+                        format: date-time
+                      extend_minutes:
+                        type: number
+                      affected_attempts:
+                        type: integer
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: 回拨时间、考试未发布/已关闭、未设置结束时间等校验失败

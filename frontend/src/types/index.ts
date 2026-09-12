@@ -77,6 +77,14 @@ export interface ExamCreatePayload {
   question_config: PaperQuestionConfig[]
 }
 
+export interface ExamExtendResponse {
+  id: number
+  old_end_time: string
+  new_end_time: string
+  extend_minutes: number
+  affected_attempts: number
+}
+
 export interface ExamQuestionView {
   exam_question_id: number
   type: QuestionType

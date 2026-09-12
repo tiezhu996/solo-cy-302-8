@@ -52,6 +52,7 @@ func New(s *handler.Server, authMiddleware gin.HandlerFunc) *gin.Engine {
 				staff.GET("/exams/:id/attempts", s.ListGrading)
 				staff.POST("/exams/:id/publish", s.PublishExam)
 				staff.POST("/exams/:id/close", s.CloseExam)
+				staff.POST("/exams/:id/extend", s.ExtendExam)
 				staff.DELETE("/exams/:id", s.DeleteExam)
 				staff.PUT("/attempts/:id/grade", s.GradeAttempt)
 			}
