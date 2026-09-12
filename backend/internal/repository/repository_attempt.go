@@ -3,9 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"time"
-
-	"gorm.io/gorm"
 
 	"github.com/gbexam/online-exam/internal/model"
 )
@@ -92,16 +89,4 @@ func (r *Repository) CountAttempts(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("count attempts: %w", err)
 	}
 	return total, nil
-}
-
-// ShiftInProgressDeadlines moves the personal deadline of every in-progress
-// attempt of an exam by delta and returns the number of affected attempts.
-func (r *Repository) ShiftInProgressDeadlines(ctx context.Context, examID uint, delta time.Duration) (int64, error) {
-	res := r.db.WithContext(ctx).Model(&model.ExamAttempt{}).
-		Where("exam_id = ? AND status = ?", examID, "in_progress").
-		Update("deadline", gorm.Expr("DATE_ADD(deadline, INTERVAL ? MICROSECOND)", delta.Microseconds()))
-	if res.Error != nil {
-		return 0, fmt.Errorf("shift in-progress deadlines: %w", res.Error)
-	}
-	return res.RowsAffected, nil
 }

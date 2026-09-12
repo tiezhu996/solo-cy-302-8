@@ -18,12 +18,11 @@ type ExamService struct {
 	baseService
 	repo         ExamRepo
 	questionRepo QuestionRepo
-	attemptRepo  AttemptRepo
 }
 
 // NewExamService constructs ExamService.
-func NewExamService(repo ExamRepo, questionRepo QuestionRepo, attemptRepo AttemptRepo, logger *slog.Logger) *ExamService {
-	return &ExamService{baseService: NewBaseService(logger), repo: repo, questionRepo: questionRepo, attemptRepo: attemptRepo}
+func NewExamService(repo ExamRepo, questionRepo QuestionRepo, logger *slog.Logger) *ExamService {
+	return &ExamService{baseService: NewBaseService(logger), repo: repo, questionRepo: questionRepo}
 }
 
 // Create builds an exam and auto-generates its paper.
@@ -167,7 +166,9 @@ func (s *ExamService) Close(ctx context.Context, role string, userID, id uint) e
 }
 
 // Extend postpones the end time of a published exam and shifts the personal
-// deadline of every in-progress attempt by the same amount of time.
+// deadline of every in-progress attempt by the same amount of time. Both
+// changes are persisted atomically: if either fails, both times keep their
+// original values.
 func (s *ExamService) Extend(ctx context.Context, role string, userID, id uint, req dto.ExamExtendRequest) (*dto.ExamExtendResponse, error) {
 	exam, err := s.repo.FindExamByID(ctx, id)
 	if err != nil {
@@ -196,13 +197,9 @@ func (s *ExamService) Extend(ctx context.Context, role string, userID, id uint, 
 	oldEnd := *exam.EndTime
 	delta := req.EndTime.Sub(oldEnd)
 	newEnd := req.EndTime
-	exam.EndTime = &newEnd
-	if err := s.repo.UpdateExam(ctx, exam); err != nil {
-		return nil, fmt.Errorf("extend exam: %w", err)
-	}
-	affected, err := s.attemptRepo.ShiftInProgressDeadlines(ctx, id, delta)
+	affected, err := s.repo.ExtendExamEndTime(ctx, id, newEnd, delta)
 	if err != nil {
-		return nil, fmt.Errorf("shift in-progress deadlines: %w", err)
+		return nil, fmt.Errorf("extend exam: %w", err)
 	}
 	return &dto.ExamExtendResponse{
 		ID:               exam.ID,

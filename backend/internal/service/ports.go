@@ -39,6 +39,7 @@ type ExamRepo interface {
 	ReplaceExamQuestions(ctx context.Context, examID uint, items []model.ExamQuestion) error
 	ListExamQuestions(ctx context.Context, examID uint) ([]model.ExamQuestion, error)
 	CountExamQuestions(ctx context.Context, examID uint) (int64, error)
+	ExtendExamEndTime(ctx context.Context, examID uint, newEnd time.Time, delta time.Duration) (int64, error)
 }
 
 // AttemptRepo is the attempt persistence contract.
@@ -49,7 +50,6 @@ type AttemptRepo interface {
 	FindInProgressAttempt(ctx context.Context, examID, studentID uint) (*model.ExamAttempt, error)
 	ListAttemptsByStudent(ctx context.Context, studentID, examID uint, page, pageSize int) ([]model.ExamAttempt, int64, error)
 	ListAttemptsByExam(ctx context.Context, examID uint) ([]model.ExamAttempt, error)
-	ShiftInProgressDeadlines(ctx context.Context, examID uint, delta time.Duration) (int64, error)
 }
 
 // AnswerRepo is the answer persistence contract.
